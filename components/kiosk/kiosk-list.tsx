@@ -1,13 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { filterKiosks, type KioskFilters } from "@/lib/kiosk-query";
+import { createKioskDetailHref } from "@/lib/kiosk-url-state";
 import type { Building, Floor, Kiosk, Service } from "@/types/kiosk";
 
 type KioskListProps = {
   buildings: readonly Building[];
   floors: readonly Floor[];
+  initialFilters: KioskFilters;
   kiosks: readonly Kiosk[];
   services: readonly Service[];
 };
@@ -15,23 +18,15 @@ type KioskListProps = {
 export function KioskList({
   buildings,
   floors,
+  initialFilters,
   kiosks,
   services,
 }: KioskListProps) {
-  const [selectedKioskId, setSelectedKioskId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<KioskFilters>({
-    query: "",
-    buildingId: "",
-    floorId: "",
-    serviceId: "",
-  });
+  const [filters, setFilters] = useState<KioskFilters>(initialFilters);
 
   const matchingKiosks = useMemo(
     () => filterKiosks({ buildings, floors, kiosks, services }, filters),
     [buildings, filters, floors, kiosks, services],
-  );
-  const selectedKiosk = matchingKiosks.find(
-    (kiosk) => kiosk.id === selectedKioskId,
   );
   const hasActiveFilters = Object.values(filters).some(Boolean);
 
@@ -148,19 +143,11 @@ export function KioskList({
                 services.find((candidate) => candidate.id === serviceId),
               )
               .filter((service): service is Service => service !== undefined);
-            const isSelected = kiosk.id === selectedKioskId;
-
             return (
               <li key={kiosk.id}>
-                <button
-                  aria-pressed={isSelected}
-                  className={`min-h-44 w-full rounded-xl border p-5 text-left shadow-sm transition focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-sky-700 ${
-                    isSelected
-                      ? "border-sky-700 bg-sky-50 ring-1 ring-sky-700"
-                      : "border-slate-200 bg-white hover:border-sky-400 hover:bg-sky-50"
-                  }`}
-                  onClick={() => setSelectedKioskId(kiosk.id)}
-                  type="button"
+                <Link
+                  className="block min-h-44 w-full rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-sky-400 hover:bg-sky-50 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-sky-700"
+                  href={createKioskDetailHref(kiosk.id, filters)}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -192,7 +179,7 @@ export function KioskList({
                       </dd>
                     </div>
                   </dl>
-                </button>
+                </Link>
               </li>
             );
           })}
@@ -213,17 +200,9 @@ export function KioskList({
         </div>
       )}
 
-      <div aria-live="polite" className="min-h-7 text-sm text-slate-700">
-        {selectedKiosk ? (
-          <p>
-            Selected: <span className="font-medium">{selectedKiosk.name.en}</span>
-            {". "}
-            {selectedKiosk.locationDescription.en}
-          </p>
-        ) : (
-          <p>Select a sample kiosk to view its sample location description.</p>
-        )}
-      </div>
+      <p className="text-sm text-slate-700">
+        Select a sample kiosk to view its location and service details.
+      </p>
     </section>
   );
 }

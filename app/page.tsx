@@ -4,8 +4,15 @@ import { kiosks } from "@/data/kiosks";
 import { mockDataNotice } from "@/data/mock-notice";
 import { services } from "@/data/services";
 import { KioskList } from "@/components/kiosk/kiosk-list";
+import { filtersFromSearchParams } from "@/lib/kiosk-url-state";
 
-export default function HomePage() {
+type HomePageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function HomePage({ searchParams }: HomePageProps) {
+  const initialFilters = filtersFromSearchParams(await searchParams);
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 sm:py-12">
       <div className="mx-auto max-w-4xl space-y-8">
@@ -31,6 +38,7 @@ export default function HomePage() {
         <KioskList
           buildings={buildings}
           floors={floors}
+          initialFilters={initialFilters}
           kiosks={kiosks}
           services={services}
         />
