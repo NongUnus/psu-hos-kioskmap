@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import { buildings } from "@/data/buildings";
 import { floors } from "@/data/floors";
 import { kiosks } from "@/data/kiosks";
+import { maps } from "@/data/maps";
 import { mockDataNotice } from "@/data/mock-notice";
 import { services } from "@/data/services";
+import { FloorMapViewer } from "@/components/map/floor-map-viewer";
 import { getKioskDetail } from "@/lib/kiosk-detail";
 import {
   createKioskListHref,
@@ -23,13 +25,19 @@ export default async function KioskDetailPage({
 }: KioskDetailPageProps) {
   const { kioskId } = await params;
   const filters = filtersFromSearchParams(await searchParams);
-  const detail = getKioskDetail(kioskId, { buildings, floors, kiosks, services });
+  const detail = getKioskDetail(kioskId, {
+    buildings,
+    floors,
+    kiosks,
+    maps,
+    services,
+  });
 
   if (!detail) {
     notFound();
   }
 
-  const { kiosk, building, floor, services: kioskServices } = detail;
+  const { kiosk, building, floor, map, services: kioskServices } = detail;
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 sm:py-12">
@@ -95,6 +103,13 @@ export default async function KioskDetailPage({
             </div>
           </dl>
         </section>
+
+        <FloorMapViewer
+          building={building}
+          floor={floor}
+          kiosk={kiosk}
+          map={map}
+        />
       </div>
     </main>
   );
