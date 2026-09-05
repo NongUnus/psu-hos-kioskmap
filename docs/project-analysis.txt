@@ -1,0 +1,231 @@
+PSU Hospital Kiosk Map — Project Analysis
+
+1. Recommended Project Architecture
+
+Use a small, modular web application with a single public kiosk-locator experience and a data layer that can begin as version-controlled JSON. The first production-ready version does not need user accounts, real-time services, indoor positioning, or a separate admin application.
+
+Recommended logical layers:
+
+- Presentation layer: a responsive, touch-friendly web interface for browsing, searching, filtering, selecting, and viewing kiosks on maps.
+- Application layer: client-side state and query logic that derives the visible kiosk list from search text, selected building, selected floor, and selected services.
+- Domain/data layer: validated kiosk, building, floor, service, and map definitions. Keep it independent from UI components so it can later move from local JSON to a CMS or database without redesigning the app.
+- Map-rendering layer: a reusable floor-map viewer that displays one approved floor-plan asset at a time and overlays kiosk markers using normalized coordinates.
+- Optional API boundary: expose read-only endpoints or server-side data-loading functions even if the initial data source is local files. This provides a clean future migration path to a database or content-management system.
+
+The primary user flow should be direct:
+
+1. A visitor opens the map and sees a searchable list of all active kiosks plus building and floor filters.
+2. They search or filter, choose a kiosk, and see its name, location, services, directions text, and map preview.
+3. Selecting “View on map” changes the map to the correct building and floor, highlights the kiosk marker, and keeps the kiosk details available.
+4. The user can change buildings/floors or return to the results without losing their context.
+
+Prefer server-rendered initial content for fast first paint and search-engine/accessibility basics, with client-side interactions only where needed for filtering and the map viewer. Do not introduce microservices, a message queue, or a complex back office in the MVP.
+
+2. Folder Structure
+
+For a Next.js App Router implementation, use a feature-oriented structure such as:
+
+app/
+  layout.tsx                    Application shell, fonts, global metadata
+  page.tsx                      Locator landing page
+  kiosk/[kioskId]/page.tsx      Optional shareable kiosk detail page
+  api/kiosks/route.ts           Optional read-only kiosk API for future consumers
+  api/maps/route.ts             Optional map metadata API if needed
+
+components/
+  kiosk/
+    kiosk-search.tsx
+    kiosk-filters.tsx
+    kiosk-list.tsx
+    kiosk-card.tsx
+    kiosk-details.tsx
+  map/
+    floor-map-viewer.tsx
+    kiosk-marker.tsx
+    map-controls.tsx
+  ui/                           Small reusable primitives: buttons, dialogs, selects
+
+lib/
+  kiosk-query.ts                Search, filtering, sorting, and URL-query helpers
+  map-coordinates.ts            Coordinate conversion and marker placement helpers
+  validation.ts                 Schema validation and shared parsing helpers
+
+data/
+  buildings.json                Canonical building metadata
+  floors.json                   Floor metadata and associated map IDs
+  kiosks.json                   Kiosk records
+  services.json                 Controlled service definitions
+  maps.json                     Map asset metadata and coordinate-system details
+
+public/
+  maps/
+    <building-id>/<floor-id>.svg  Approved floor-plan assets, preferably SVG
+  images/                       Logos and other static visual assets
+
+types/
+  kiosk.ts                      Domain types for kiosk, building, floor, service, map
+
+tests/
+  unit/                         Query and coordinate logic tests
+  e2e/                          Core browse/search/filter/map user-flow tests
+
+docs/
+  requirements.md
+  project-analysis.txt
+
+Keep floor-plan assets separate from kiosk data. A map can be replaced without editing kiosk records, and a kiosk can be moved by changing only its coordinates and location metadata. In the MVP, JSON files may be imported directly by server-side code; avoid duplicating the same data in components.
+
+3. Recommended Tech Stack
+
+- Framework: Next.js with the App Router and TypeScript. It supports a fast, deployable public web application with sensible routing, server rendering, static assets, and future API routes in one codebase.
+- Styling: Tailwind CSS plus a small accessible component set (for example, shadcn/ui selectively, rather than installing a large design system). Build for large touch targets, high contrast, readable Thai and English copy, and desktop kiosk displays as well as phones.
+- Validation: Zod schemas for kiosk/map JSON at build time and at any API boundary. This prevents invalid building IDs, map IDs, and coordinates from silently reaching the user interface.
+- Data for MVP: checked-in JSON files reviewed by the project team. This is the simplest dependable option when kiosk data changes infrequently.
+- Map assets: SVG floor plans exported from an authoritative hospital source. SVG permits crisp zooming and deterministic marker overlays. Use PNG/WebP only when source plans cannot be exported as SVG.
+- Map interaction: native SVG/image rendering with a small pan/zoom library only if zooming is required after usability testing. Do not use a geographic-map platform such as Google Maps or Mapbox for indoor floor plans.
+- Testing: Vitest for unit tests and Playwright for a small set of browser end-to-end checks.
+- Quality/tooling: ESLint, Prettier, TypeScript strict mode, and a CI workflow that runs type checking, linting, unit tests, and production build.
+- Deployment: Vercel or an equivalent managed Node/Next.js host behind HTTPS. Store no secrets for the initial static-data release.
+- Analytics: optional privacy-conscious, aggregate analytics only after hospital approval. Track anonymous events such as filter use and kiosk-detail/map views; do not collect patient information.
+
+The first release can be almost entirely static. A database, CMS, authentication, Redis, background jobs, and native mobile app are not justified until operational editing, kiosk status, reporting, or analytics requirements are confirmed.
+
+4. Kiosk Data Model
+
+Use stable, machine-readable identifiers and human-readable labels. Never use a display name as a foreign key. Store localization-ready text as language fields from the beginning if Thai and English are expected.
+
+Building
+- id: stable key, for example "main-building"
+- nameTh, nameEn: display names
+- shortName: optional concise label for filters/maps
+- sortOrder: display order
+- addressOrArea: optional wayfinding context
+- isActive: whether the building is shown
+
+Floor
+- id: stable key, for example "main-building-l2"
+- buildingId: parent building ID
+- code: source-of-truth floor code, for example "2" or "B1"
+- nameTh, nameEn: display labels
+- sortOrder: order within building
+- mapId: map asset/definition ID
+- isActive: whether the floor is shown
+
+Service
+- id: stable key, for example "queue-ticket"
+- nameTh, nameEn: service/function label
+- descriptionTh, descriptionEn: optional short explanation
+- icon: optional UI icon key
+- sortOrder: consistent display order
+
+Map
+- id: stable key
+- buildingId and floorId: map ownership
+- assetPath: public SVG or image path
+- width and height: intrinsic coordinate dimensions for a raster image, or SVG viewBox dimensions
+- coordinateSystem: normally "normalized" for coordinates from 0 to 1 on each axis
+- version and updatedAt: allow safe replacement and review of floor plans
+- accessibleDescription: short text describing the plan and landmarks
+
+Kiosk
+- id: immutable stable key, for example "ksk-main-l2-001"
+- code: optional hospital operational/inventory code
+- nameTh, nameEn: kiosk label
+- buildingId and floorId: canonical physical location
+- mapId: map on which the kiosk appears
+- position: { x, y }, normalized from 0 to 1 relative to the map asset
+- locationDescriptionTh, locationDescriptionEn: landmark-based directions, for example "beside the outpatient pharmacy"
+- services: array of Service IDs
+- accessibilityNotesTh, accessibilityNotesEn: optional access information
+- status: "active" initially; reserve "temporarily_unavailable", "moved", and "retired" for later approved use
+- isPublic: whether it should appear to public users
+- sortOrder: optional curated result order
+- updatedAt: data-review timestamp
+
+Constraints and validation:
+
+- Every kiosk must reference an existing building, floor, map, and service IDs.
+- The floor must belong to the referenced building; the map must belong to that floor.
+- x and y must be between 0 and 1. A marker near an edge should remain tappable by clamping its visible UI position, not by altering stored location data.
+- Kiosk IDs must never be recycled after a physical unit moves. Update its location/history as needed, or create a successor record if operational identity changes.
+- Public results should show only active, public kiosks. Do not expose internal maintenance notes in the public model.
+
+5. How the Indoor Floor Map Should Work
+
+Use a curated floor-plan viewer, not turn-by-turn indoor navigation. The map’s job in MVP is to answer “where is this kiosk on this floor?” clearly and reliably.
+
+- One map represents one building floor. The interface selects building first, then floor; a deep link or selected kiosk sets both automatically.
+- Use a supplied, simplified SVG plan whenever possible. Keep public labels readable, remove irrelevant technical drawing detail, and visually distinguish corridors, entrances, lifts/stairs, and a few important landmarks.
+- Store kiosk positions as normalized x/y values, independent of screen pixels. At rendering time, markerX = x multiplied by the current rendered map width and markerY = y multiplied by its height. This makes markers remain correct across screen sizes and asset resolutions.
+- Render all public active kiosk markers on the selected floor. The selected kiosk gets a clear highlighted marker, a short label/callout, and is visually listed above other markers.
+- Tapping a marker opens or updates the same kiosk detail panel. Selecting a kiosk from search results switches to the right map and highlights its marker.
+- Provide zoom in/out, reset, and pan only where the plan is too detailed to read at fit-to-screen. On a dedicated physical kiosk, include large obvious controls and auto-reset after an inactivity timeout if requested by operations.
+- Keep a text alternative beside the graphic: building, floor, landmark directions, services, and a list of kiosk names. The map must not be the only way to identify a result.
+- Preserve map context in the URL (for example, building, floor, kiosk ID) so staff can share a specific location and browser back/forward works predictably.
+- Publish maps only after a simple accuracy review: asset version is current, floor/building labels match hospital terminology, every marker has been visually verified, and no sensitive/security-only information is exposed.
+
+Avoid indoor GPS, live blue-dot positioning, route calculation, or a freehand drawing editor in MVP. They add substantial accuracy, maintenance, and privacy concerns without being required for basic discovery.
+
+6. MVP Implementation Phases
+
+Phase 0 — Confirm content and acceptance criteria
+- Obtain the authoritative list of public kiosks, their building/floor assignments, service lists, and landmark descriptions.
+- Obtain approved floor plans and decide whether Thai, English, or both languages ship in version one.
+- Define the supported browser/device targets, especially whether a fixed lobby touch screen is in scope.
+- Agree on an accuracy-review owner and data update process.
+
+Phase 1 — Foundation and sample data
+- Create the Next.js/TypeScript application baseline, design tokens, responsive layout, and accessibility baseline.
+- Define Zod schemas and the JSON data format for buildings, floors, services, maps, and kiosks.
+- Add representative, clearly labeled sample records only until hospital data is supplied.
+- Implement build-time validation so bad references or out-of-range coordinates fail CI.
+
+Phase 2 — Core discovery experience
+- Implement the all-kiosk list, free-text search, building/floor filters, empty states, and kiosk detail panel/page.
+- Search names, building/floor labels, service labels, and landmark descriptions; make result ordering deterministic.
+- Ensure search and filters work with keyboard, touch, and screen readers.
+
+Phase 3 — Floor-map experience
+- Add the floor-map viewer and selected-marker behavior.
+- Connect selecting a list result, detail view, and marker in both directions.
+- Add responsive fit, zoom/pan only if needed, reset controls, text alternatives, and URL state.
+- Conduct a visual location audit with hospital staff for every kiosk marker.
+
+Phase 4 — Production hardening and release
+- Complete Thai/English content, accessibility checks, mobile and kiosk-display testing, and cross-browser testing.
+- Add unit tests for queries/data validation and end-to-end tests for search, filtering, details, and opening the correct map.
+- Configure CI, HTTPS hosting, error monitoring, basic uptime checks, and a documented content update/review workflow.
+- Perform a pilot in one building or with staff, correct content/map issues, then publish.
+
+7. Potential Technical Risks
+
+- Incorrect or stale location data: This is the largest practical risk. A polished interface is harmful if it directs people to a moved or unavailable kiosk. Mitigation: named content owner, source-of-truth records, map versioning, clear review cadence, and a fast update path.
+- Inconsistent floor-plan source files: CAD exports, scans, and mixed scales can make overlays inaccurate or illegible. Mitigation: define one exported asset format and coordinate convention, use normalized coordinates, and visually approve every floor after export.
+- Ambiguous building/floor names: Hospital names, wings, and floor labels may differ between signage and internal terminology. Mitigation: adopt signage as public truth, support aliases in search, and include landmark descriptions.
+- Touch-screen usability: Small markers, hover-only behavior, dense floor plans, and an on-screen keyboard can make a web map difficult in a lobby. Mitigation: large controls, at least 44 by 44 CSS-pixel interaction targets, high contrast, simple defaults, and testing on the actual hardware.
+- Accessibility and language coverage: A graphics-first design may exclude screen-reader, low-vision, Thai-speaking, or English-speaking users. Mitigation: text equivalents, semantic controls, keyboard support, color-independent selected states, and planned bilingual content.
+- Performance on constrained hospital networks/devices: Very large scanned maps and heavy client libraries slow first use. Mitigation: optimized SVGs/images, lazy-load nonselected maps, static hosting/CDN caching, and keep dependencies small.
+- Privacy/security review: Floor plans may contain sensitive areas or operational details, and analytics may be subject to hospital policy. Mitigation: publish only approved public maps, avoid patient data entirely, and obtain approval before analytics or incident reporting.
+- Future status data pressure: Users may expect “active” to mean live availability. Mitigation: label the initial status as maintained location availability, do not claim real-time state, and add live integrations only when an operational data source exists.
+- Content-editing bottleneck: JSON is excellent for a small, stable MVP but requires a deployment to change content. Mitigation: document a low-friction edit/review/release process; move to an admin/CMS only when changes become frequent enough to justify it.
+
+8. Ambiguities and Missing Requirements
+
+The following decisions should be resolved before implementation because they affect content, usability, or scope:
+
+- What exactly is a “Kiosk”? Is it a queue-ticket terminal, self-service registration machine, payment device, information kiosk, or several types? Which services/functions must be shown for each type?
+- What is the authoritative inventory and owner for kiosk location and service data? How often do locations/services change, and who approves public updates?
+- Which hospital buildings, wings, and floors are included at launch? Are basement, parking, outpatient, and annex buildings in scope?
+- Are authoritative, public-safe floor plans available in SVG/PDF/CAD/image formats? May they be simplified, relabeled, and published publicly?
+- What naming exactly matches physical signage, including building names, wing identifiers, and floor labels? Are alternate Thai/English spellings needed for search?
+- Is bilingual Thai/English required for launch? If yes, who supplies and reviews translations? Are additional languages needed?
+- Which display contexts are required: mobile browser, desktop browser, wall-mounted touch kiosk, or all three? What screen resolution, browser, orientation, and inactivity-reset behavior apply to dedicated kiosks?
+- What should “Search for a Kiosk” match: kiosk name/code only, or also services, building, floor, and nearby landmarks? Should partial Thai/English matches and aliases be supported?
+- What details are required beyond location and services: operating hours, photo, accessibility information, phone/department contact, last updated date, or temporary availability?
+- Should users be able to see all kiosks on a floor simultaneously, and should filters include service/function in addition to building and floor?
+- Is there an expected “nearest kiosk” behavior before that future feature exists, such as a default entrance location or building selection? It should not be implied without a reliable starting point.
+- Is public web indexing desired, or should the application be available only from hospital devices/network? This affects deployment, metadata, and access controls.
+- What hospital privacy, security, branding, accessibility, and analytics policies apply? Are there prohibited areas or labels on published floor plans?
+- What is the acceptance definition for map accuracy, availability, page load time, and accessibility? Who signs off before launch?
+
+Recommended scope decision: launch a bilingual (if content is available), static, public kiosk finder with reviewed location data and floor-plan overlays. Treat status, reporting, nearest-kiosk calculation, QR entry points, analytics, and administration as separate post-MVP increments once their data sources and owners are established.
